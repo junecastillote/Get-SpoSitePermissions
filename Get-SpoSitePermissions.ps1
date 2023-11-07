@@ -1,3 +1,46 @@
+
+<#PSScriptInfo
+
+.VERSION 0.1
+
+.GUID 27961db8-6abf-4f0c-b059-aed312f34efc
+
+.AUTHOR June Castillote
+
+.COMPANYNAME
+
+.COPYRIGHT june.castillote@gmail.com
+
+.TAGS
+
+.LICENSEURI https://github.com/junecastillote/Get-SpoSitePermissions/blob/main/LICENSE
+
+.PROJECTURI https://github.com/junecastillote/Get-SpoSitePermissions
+
+.ICONURI
+
+.EXTERNALMODULEDEPENDENCIES
+
+.REQUIREDSCRIPTS
+
+.EXTERNALSCRIPTDEPENDENCIES
+
+.RELEASENOTES
+
+
+.PRIVATEDATA
+
+#>
+
+#Requires -Version 7.2
+#Requires -Module @{ModuleName="Pnp.PowerShell";ModuleVersion="2.2.0"}
+
+<#
+
+.DESCRIPTION
+ PowerShell script to export SharePoint Online site permissions with Pnp.
+
+#>
 [CmdletBinding()]
 param (
     [Parameter(Mandatory)]
@@ -154,3 +197,5 @@ for ($i = 0; $i -lt $Url.Count; $i++) {
 if ($OutCsvFile) {
     "Results are exported to $(Resolve-Path $OutCsvFile)." | Out-Default
 }
+
+
