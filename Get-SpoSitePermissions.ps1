@@ -1,75 +1,137 @@
 [CmdletBinding()]
 param (
-    [Parameter()]
-    [string]
-    $spoUrl,
+    [Parameter(Mandatory)]
+    [string[]]
+    $Url,
+
+    [Parameter(Mandatory)]
+    [pscredential]
+    $Credential,
 
     [Parameter()]
-    $spoConnection
+    [String]
+    $OutCsvFile,
+
+    [Parameter()]
+    [switch]
+    $DisplayResults
 )
-
-$web = Get-PnPWeb -Includes RoleAssignments -Connection $spoConnection
-$members = [System.Collections.ArrayList]@()
-foreach ($ra in $web.RoleAssignments) {
-    $null = $members.Add(
-        $(
-            [PSCustomObject]$([ordered]@{
-                    Name         = $ra.Member.Title
-                    LoginName    = $(
-                        if ($ra.Member.LoginName -like "*guest#*") {
-                                ($ra.Member.LoginName).Split('#')[-1]
-                        }
-                        else {
-                                ($ra.Member.LoginName).Split('|')[-1]
-                        }
-                    )
-                    RoleTypeKind = $($ra.RoleDefinitionBindings[0].RoleTypeKind.ToString())
-                    ObjectType   = $ra.Member.TypedObject.ToString().Split('.')[-1]
-                })
-        )
-    )
+if ($OutCsvFile) {
+    # if (!(Test-Path $OutCsvFile)) {
+    try {
+        $null = New-Item -Path $OutCsvFile -ItemType File -Force -ErrorAction Stop
+    }
+    catch {
+        $_.Exception.Message | Out-Default
+        return $null
+    }
+    # }
 }
 
-# $members
+
+
+$PSStyle.Progress.View = 'Classic'
+
+$urlPatternToExclude = ".*-my\.sharepoint\.com/$|.*\.sharepoint\.com/$|.*\.sharepoint\.com/search$|.*\.sharepoint\.com/portals/hub$|.*\.sharepoint\.com/sites/appcatalog$"
+$Url = $Url | Where-Object { $_ -notmatch $urlPatternToExclude } | Sort-Object
+
 $result = [System.Collections.ArrayList]@()
-foreach ($item in $members) {
-    if ($item.ObjectType -eq 'User') {
-        $null = $result.Add(
-            [PSCustomObject]$([ordered]@{
-                    SharePointGroup = $null
-                    Name            = $item.Name
-                    LoginName       = $item.LoginName
-                    Permission      = $item.RoleTypeKind
-                    External        = $(
-                        if ($_.LoginName -like "*guest#*") {
-                            'Yes'
-                        }
-                        else {
-                            'No'
-                        }
-                    )
-                    ObjectType      = $item.ObjectType
-                })
+for ($i = 0; $i -lt $Url.Count; $i++) {
+    # "[$($i+1) of $($Url.Count)] : $url[$i]" | Out-Default
+    [int]$percentComplete = (($i + 1) / ($Url.Count)) * 100
+    Write-Progress -PercentComplete $percentComplete -CurrentOperation "Processing site $($i+1) of $($Url.Count) ($percentComplete%)" -Activity "SharePoint Site Permission" -Status $($url[$i])
+
+    try {
+        Connect-PnPOnline -Url $url[$i] -Credentials $Credential -ErrorAction Stop
+        $site = Get-PnPTenantSite -Identity $url[$i] -ErrorAction Stop
+    }
+    catch {
+        $_.Exception.Message | Out-Default
+        Continue # Skip to next item
+    }
+
+    if ($site.Template -eq 'RedirectSite#0') {
+        "    -> [INFO] : [$($site.Url)] is a Redirect Site and will be skipped." | Out-Default
+        Continue # Skip to next item
+    }
+
+    $members = [System.Collections.ArrayList]@()
+
+    $web = Get-PnPWeb -Includes RoleAssignments
+    $context = Get-PnPContext
+    foreach ($ra in $web.RoleAssignments) {
+        $context.Load($ra.RoleDefinitionBindings)
+        $context.Load($ra.Member)
+        $context.ExecuteQuery()
+
+        $null = $members.Add(
+            $(
+                [PSCustomObject]$(
+                    [ordered]@{
+                        Name          = $ra.Member.Title
+                        LoginName     = $(
+                            if ($ra.Member.LoginName -like "*guest#*") {
+                                ($ra.Member.LoginName).Split('#')[-1]
+                            }
+                            else {
+                                ($ra.Member.LoginName).Split('|')[-1]
+                            }
+                        )
+                        Permission    = $($ra.RoleDefinitionBindings[0].Name.ToString())
+                        PrincipalType = $ra.Member.TypedObject.ToString().Split('.')[-1]
+                    }
+                )
+            )
         )
     }
 
-    if ($item.ObjectType -eq 'Group') {
-        $spoGroupMember = Get-PnPGroupMember -Group $item.LoginName -Connection $spoConnection
-        $spoGroupMember | ForEach-Object {
-            if ($_.LoginName -ne 'SHAREPOINT\system') {
-                $null = $result.Add(
-                    [PSCustomObject]$([ordered]@{
+    foreach ($item in $members) {
+        if ($item.PrincipalType -eq 'User') {
+            $tempResult = $(
+                [PSCustomObject]$([ordered]@{
+                        SiteName        = $web.Title
+                        SiteURL         = $web.Url
+                        SharePointGroup = $null
+                        Name            = $item.Name
+                        PrincipalId     = $item.LoginName
+                        PrincipalType   = $item.PrincipalType
+                        Permission      = $item.Permission
+                        External        = $(
+                            if ($_.LoginName -like "*guest#*") {
+                                'Yes'
+                            }
+                            else {
+                                'No'
+                            }
+                        )
+
+                    })
+            )
+            $null = $result.Add($tempResult)
+            $tempResult | Export-Csv -Path $OutCsvFile -NoTypeInformation -Append -Force -Encoding unicode -Delimiter "`t"
+            if ($DisplayResults) { $tempResult }
+        }
+
+        if ($item.PrincipalType -eq 'Group') {
+            $spoGroupMember = Get-PnPGroupMember -Group $item.LoginName | Where-Object { $_.LoginName -ne 'SHAREPOINT\system' }
+            $spoGroupMember | ForEach-Object {
+                $tempResult = $(
+                    [PSCustomObject]$(
+                        [ordered]@{
+                            SiteName        = $web.Title
+                            SiteURL         = $web.Url
                             SharePointGroup = $item.LoginName
                             Name            = $_.Title
-                            LoginName       = $(
+                            PrincipalId     = $(
                                 if ($_.LoginName -like "*guest#*") {
-                                ($_.LoginName).Split('#')[-1]
+                                    ($_.LoginName).Split('#')[-1]
                                 }
                                 else {
-                                ($_.LoginName).Split('|')[-1]
+                                    ($_.LoginName).Split('|')[-1]
                                 }
                             )
-                            Permission      = $item.RoleTypeKind
+                            PrincipalType   = $_.PrincipalType
+                            Permission      = $item.Permission
                             External        = $(
                                 if ($_.LoginName -like "*guest#*") {
                                     'Yes'
@@ -78,11 +140,17 @@ foreach ($item in $members) {
                                     'No'
                                 }
                             )
-                            ObjectType      = $_.PrincipalType
-                        })
+                        }
+                    )
                 )
+                $null = $result.Add($tempResult)
+                $tempResult | Export-Csv -Path $OutCsvFile -NoTypeInformation -Append -Force -Encoding unicode -Delimiter "`t"
+                if ($DisplayResults) { $tempResult }
             }
         }
     }
 }
-$result
+
+if ($OutCsvFile) {
+    "Results are exported to $(Resolve-Path $OutCsvFile)." | Out-Default
+}
