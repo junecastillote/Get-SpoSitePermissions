@@ -45,7 +45,7 @@
 param (
     [Parameter(Mandatory)]
     [string[]]
-    $Url,
+    $SiteURL,
 
     [Parameter(Mandatory)]
     [pscredential]
@@ -75,17 +75,17 @@ if ($OutCsvFile) {
 }
 
 $urlPatternToExclude = ".*-my\.sharepoint\.com/$|.*\.sharepoint\.com/$|.*\.sharepoint\.com/search$|.*\.sharepoint\.com/portals/hub$|.*\.sharepoint\.com/sites/appcatalog$"
-$Url = $Url | Where-Object { $_ -notmatch $urlPatternToExclude } | Sort-Object
+$SiteURL = $SiteURL | Where-Object { $_ -notmatch $urlPatternToExclude } | Sort-Object
 
 # $result = [System.Collections.ArrayList]@()
-for ($i = 0; $i -lt $Url.Count; $i++) {
-    "[$($i+1) of $($Url.Count)] : $($url[$i])" | Out-Default
-    # $percentComplete = (($i + 1) / ($Url.Count)) * 100
-    # Write-Progress -PercentComplete $percentComplete -CurrentOperation "Processing site $($i+1) of $($Url.Count) ($percentComplete%)" -Activity "Get SharePoint Site Permission" -Status $($url[$i])
+for ($i = 0; $i -lt $SiteURL.Count; $i++) {
+    "[$($i+1) of $($SiteURL.Count)] : $($SiteURL[$i])" | Out-Default
+    # $percentComplete = (($i + 1) / ($SiteURL.Count)) * 100
+    # Write-Progress -PercentComplete $percentComplete -CurrentOperation "Processing site $($i+1) of $($SiteURL.Count) ($percentComplete%)" -Activity "Get SharePoint Site Permission" -Status $($SiteURL[$i])
 
     try {
-        Connect-PnPOnline -Url $url[$i] -Credentials $Credential -ErrorAction Stop
-        $site = Get-PnPTenantSite -Identity $url[$i] -ErrorAction Stop
+        Connect-PnPOnline -Url $SiteURL[$i] -Credentials $Credential -ErrorAction Stop
+        $site = Get-PnPTenantSite -Identity $SiteURL[$i] -ErrorAction Stop
     }
     catch {
         "    -> [ERROR] : [$($_.Exception.Message)]" | Out-Default
