@@ -1,7 +1,7 @@
 
 <#PSScriptInfo
 
-.VERSION 0.1
+.VERSION 0.2
 
 .GUID 27961db8-6abf-4f0c-b059-aed312f34efc
 
@@ -41,15 +41,27 @@
  PowerShell script to export SharePoint Online site permissions with Pnp.
 
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Credential')]
 param (
-    [Parameter(Mandatory)]
-    [string[]]
+    [Parameter(Mandatory, Position = 0)]
+    [String[]]
     $SiteURL,
 
-    [Parameter(Mandatory)]
+    [Parameter( Mandatory, ParameterSetName = 'Credential' )]
     [pscredential]
     $Credential,
+
+    [Parameter( Mandatory, ParameterSetName = 'Certificate' )]
+    [String]
+    $ClientId,
+
+    [Parameter( Mandatory, ParameterSetName = 'Certificate' )]
+    [String]
+    $Tenant,
+
+    [Parameter( Mandatory, ParameterSetName = 'Certificate' )]
+    [String]
+    $Thumbprint,
 
     [Parameter(Mandatory)]
     [String]
