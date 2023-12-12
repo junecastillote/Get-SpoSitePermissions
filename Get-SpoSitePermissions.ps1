@@ -41,29 +41,17 @@
  PowerShell script to export SharePoint Online site permissions with Pnp.
 
 #>
-[CmdletBinding(DefaultParameterSetName = 'Credential')]
+[CmdletBinding()]
 param (
-    [Parameter(Mandatory, Position = 0)]
-    [String[]]
-    $SiteURL,
+    [Parameter(Mandatory)]
+    [string[]]
+    $Url,
 
-    [Parameter( Mandatory, ParameterSetName = 'Credential' )]
+    [Parameter(Mandatory)]
     [pscredential]
     $Credential,
 
-    [Parameter( Mandatory, ParameterSetName = 'Certificate' )]
-    [String]
-    $ClientId,
-
-    [Parameter( Mandatory, ParameterSetName = 'Certificate' )]
-    [String]
-    $Tenant,
-
-    [Parameter( Mandatory, ParameterSetName = 'Certificate' )]
-    [String]
-    $Thumbprint,
-
-    [Parameter(Mandatory)]
+    [Parameter()]
     [String]
     $OutCsvFile,
 
@@ -86,18 +74,20 @@ if ($OutCsvFile) {
     # }
 }
 
-$urlPatternToExclude = ".*-my\.sharepoint\.com/$|.*\.sharepoint\.com/$|.*\.sharepoint\.com/search$|.*\.sharepoint\.com/portals/hub$|.*\.sharepoint\.com/sites/appcatalog$"
-$SiteURL = $SiteURL | Where-Object { $_ -notmatch $urlPatternToExclude } | Sort-Object
+# $urlPatternToExclude = ".*-my\.sharepoint\.com/$|.*\.sharepoint\.com/$|.*\.sharepoint\.com/search$|.*\.sharepoint\.com/portals/hub$|.*\.sharepoint\.com/sites/appcatalog$"
+$urlPatternToExclude = ".*-my\.sharepoint\.com/$"
+$Url = $Url | Where-Object { $_ -notmatch $urlPatternToExclude } | Sort-Object
+# $Url = $Url | Sort-Object
 
 # $result = [System.Collections.ArrayList]@()
-for ($i = 0; $i -lt $SiteURL.Count; $i++) {
-    "[$($i+1) of $($SiteURL.Count)] : $($SiteURL[$i])" | Out-Default
-    # $percentComplete = (($i + 1) / ($SiteURL.Count)) * 100
-    # Write-Progress -PercentComplete $percentComplete -CurrentOperation "Processing site $($i+1) of $($SiteURL.Count) ($percentComplete%)" -Activity "Get SharePoint Site Permission" -Status $($SiteURL[$i])
+for ($i = 0; $i -lt $Url.Count; $i++) {
+    "[$($i+1) of $($Url.Count)] : $($url[$i])" | Out-Default
+    # $percentComplete = (($i + 1) / ($Url.Count)) * 100
+    # Write-Progress -PercentComplete $percentComplete -CurrentOperation "Processing site $($i+1) of $($Url.Count) ($percentComplete%)" -Activity "Get SharePoint Site Permission" -Status $($url[$i])
 
     try {
-        Connect-PnPOnline -Url $SiteURL[$i] -Credentials $Credential -ErrorAction Stop
-        $site = Get-PnPTenantSite -Identity $SiteURL[$i] -ErrorAction Stop
+        Connect-PnPOnline -Url $url[$i] -Credentials $Credential -ErrorAction Stop
+        $site = Get-PnPTenantSite -Identity $url[$i] -ErrorAction Stop
     }
     catch {
         "    -> [ERROR] : [$($_.Exception.Message)]" | Out-Default
@@ -140,7 +130,8 @@ for ($i = 0; $i -lt $SiteURL.Count; $i++) {
                                 }
                             )
                             Permission    = $($ra.RoleDefinitionBindings[0].Name.ToString())
-                            PrincipalType = $ra.Member.TypedObject.ToString().Split('.')[-1]
+                            PrincipalType = $ra.Member.PrincipalType
+                            TypedObject   = $ra.Member.TypedObject.ToString()
                         }
                     )
                 )
@@ -153,37 +144,7 @@ for ($i = 0; $i -lt $SiteURL.Count; $i++) {
     }
 
     foreach ($item in $members) {
-        if ($item.PrincipalType -eq 'User') {
-            $tempResult = $(
-                [PSCustomObject]$(
-                    [ordered]@{
-                        SiteName        = $web.Title
-                        SiteURL         = $web.Url
-                        SharePointGroup = $null
-                        Name            = $item.Name
-                        PrincipalId     = $item.LoginName
-                        PrincipalType   = $item.PrincipalType
-                        Permission      = $item.Permission
-                        External        = $(
-                            if ($_.LoginName -like "*guest#*") {
-                                'Yes'
-                            }
-                            else {
-                                'No'
-                            }
-                        )
-
-                    }
-                )
-            )
-            # $null = $result.Add($tempResult)
-            if ($OutCsvFile) {
-                $tempResult | Export-Csv -Path $OutCsvFile -NoTypeInformation -Append -Force -Encoding unicode -Delimiter "`t"
-            }
-            if ($DisplayResults) { $tempResult }
-        }
-
-        if ($item.PrincipalType -eq 'Group') {
+        if ($item.PrincipalType -eq 'SharePointGroup') {
             $spoGroupMember = Get-PnPGroupMember -Group $item.LoginName | Where-Object { $_.LoginName -ne 'SHAREPOINT\system' }
             $spoGroupMember | ForEach-Object {
                 $tempResult = $(
@@ -221,6 +182,34 @@ for ($i = 0; $i -lt $SiteURL.Count; $i++) {
                 if ($DisplayResults) { $tempResult }
             }
         }
+        else {
+            $tempResult = $(
+                [PSCustomObject]$(
+                    [ordered]@{
+                        SiteName        = $web.Title
+                        SiteURL         = $web.Url
+                        SharePointGroup = $null
+                        Name            = $item.Name
+                        PrincipalId     = $item.LoginName
+                        PrincipalType   = $item.PrincipalType
+                        Permission      = $item.Permission
+                        External        = $(
+                            if ($_.LoginName -like "*guest#*") {
+                                'Yes'
+                            }
+                            else {
+                                'No'
+                            }
+                        )
+                    }
+                )
+            )
+            # $null = $result.Add($tempResult)
+            if ($OutCsvFile) {
+                $tempResult | Export-Csv -Path $OutCsvFile -NoTypeInformation -Append -Force -Encoding unicode -Delimiter "`t"
+            }
+            if ($DisplayResults) { $tempResult }
+        }
     }
 }
 
@@ -229,3 +218,5 @@ for ($i = 0; $i -lt $SiteURL.Count; $i++) {
 if ($OutCsvFile) {
     "Results are exported to $(Resolve-Path $OutCsvFile)." | Out-Default
 }
+
+
